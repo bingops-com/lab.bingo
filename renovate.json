@@ -1,0 +1,7 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommitTypeAll(bump)"],
+  "enabledManagers": ["kubernetes", "github-actions"],
+  "kubernetes": {"managerFilePatterns": ["/^deploy/.+\\.yaml$/"]},
+  "packageRules": [{"matchDatasources": ["docker"], "pinDigests": true}]
+}

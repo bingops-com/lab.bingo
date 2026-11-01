@@ -1,0 +1,55 @@
+name: Validate lab.bingo
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Check JavaScript, catalogue and Kubernetes rendering
+        run: make check
+      - name: Check Caddy with the production security constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          caddy_image=$(python3 -c 'import pathlib,re; print(re.search(r"image: (caddy:\S+)", pathlib.Path("deploy/server.yaml").read_text())[1])')
+          container_id=$(docker run --detach --rm --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --read-only \
+            --publish 127.0.0.1:4187:8080 \
+            --mount "type=bind,src=$PWD/Caddyfile,dst=/etc/caddy/Caddyfile,readonly" \
+            --mount "type=bind,src=$PWD/web,dst=/srv,readonly" \
+            --tmpfs /tmp:uid=1000,gid=1000,mode=0700,size=128m,exec \
+            --tmpfs /data:uid=1000,gid=1000,size=8m \
+            --tmpfs /config:uid=1000,gid=1000,size=8m \
+            --entrypoint /bin/sh "$caddy_image" -ec '
+              cp /usr/bin/caddy /tmp/caddy
+              /tmp/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+              exec /tmp/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+            ')
+          trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
+          ready=false
+          for ((attempt = 0; attempt < 30; attempt++)); do
+            if curl --fail --silent http://127.0.0.1:4187/healthz >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            docker logs "$container_id"
+            exit 1
+          fi
+          HUB_TEST_URL=http://127.0.0.1:4187 python3 -m unittest discover -s tests -v

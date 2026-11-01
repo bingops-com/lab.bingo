@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hub
+resources:
+  - deploy/namespace.yaml
+  - deploy/server.yaml
+configMapGenerator:
+  - name: hub-config
+    files:
+      - Caddyfile
+  - name: hub-site
+    files:
+      - web/index.html
+      - web/style.css
+      - web/app.js
+      - web/favicon.svg
+  - name: hub-fonts
+    files:
+      - web/fonts/onest-latin.woff2
+      - web/fonts/onest-OFL.txt
+      - web/fonts/ibm-plex-sans-latin.woff2
+      - web/fonts/ibm-plex-sans-OFL.txt
+labels:
+  - pairs:
+      environment: labprod
